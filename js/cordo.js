@@ -80,7 +80,7 @@ cordo.initialize(function () {
         html += "系统版本：" + device.version + "<br/>";
         //Get the device's Universally Unique Identifier (UUID).
         // The details of how a UUID is generated are determined by the device manufacturer and are specific to the device's platform or model.
-        html += "UUID：" + device.cordova + "<br/>";
+        html += "UUID：" + device.uuid + "<br/>";
         //Get the device's manufacturer.
         // Android:    Motorola XT1032 would return "motorola"
         // BlackBerry: returns "BlackBerry"
@@ -110,7 +110,7 @@ cordo.initialize(function () {
                 for (var x in contacts) {
                     var contact = contacts[x];
                     content += "称呼：" + contact["displayName"] + "<br>";
-                    content += "email：" + contact["email"] + "<br>";
+                    content += "email：" + (contact["email"] ? contact["email"] : "") + "<br>";
                     for (var y in contact["phoneNumbers"]) {
                         content +=
                             contact["phoneNumbers"][y]["type"] + "：" +
