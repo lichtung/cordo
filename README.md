@@ -9,8 +9,13 @@
 
 实现的功能：
 - 读取设备信息（系统，版本...）
+
 ![screenshot](https://raw.githubusercontent.com/lichtung/cordo/master/screenshots/1.png)
+
 - 读取联系人信息
+
 ![screenshot](https://raw.githubusercontent.com/lichtung/cordo/master/screenshots/2.png)
+
 - 拍照并获取照片base64码
+
 ![screenshot](https://raw.githubusercontent.com/lichtung/cordo/master/screenshots/3.png)
