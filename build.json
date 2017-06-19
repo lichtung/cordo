@@ -1,0 +1,10 @@
+{
+  "android": {
+    "release": {
+      "keystore": "releasekey.keystore",
+      "alias": "cordova",
+      "storePassword": "123456",
+      "password": "123456"
+    }
+  }
+}
