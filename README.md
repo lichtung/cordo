@@ -13,6 +13,6 @@
 - 拍照并获取照片base64码
 
 截图：
-![screenshot](https://github.com/lichtung/cordo/raw/master/screenshots/1.jpg)
-![screenshot](https://github.com/lichtung/cordo/raw/master/screenshots/2.jpg)
-![screenshot](https://github.com/lichtung/cordo/raw/master/screenshots/3.jpg)
+![screenshot](https://raw.githubusercontent.com/lichtung/cordo/master/screenshots/1.png)
+![screenshot](https://raw.githubusercontent.com/lichtung/cordo/master/screenshots/2.png)
+![screenshot](https://raw.githubusercontent.com/lichtung/cordo/master/screenshots/3.png)
