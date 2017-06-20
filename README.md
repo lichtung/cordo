@@ -1,6 +1,6 @@
 # cordova demo app
 
-### 安装
+### 安装+打包
 ```bash
 wget https://github.com/lichtung/cordo/archive/master.zip
 unzip master.zip
