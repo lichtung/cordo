@@ -16,7 +16,21 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+"use strict";
+
 var cordo = (function () {
+    /**
+     * 当前下载
+     * @type {FileTransfer}
+     * @private
+     */
+    var currentDownload = null;
+    /**
+     * 当前上传
+     * @type {FileTransfer}
+     * @private
+     */
+    var currentUpload = null;
     /**
      * plugins:
      * |----- plugin name --------|--------- global variable -----------|
@@ -26,52 +40,177 @@ var cordo = (function () {
      * |cordova-plugin-geolocation|navigator.geolocation                |
      *
      */
-    /**
-     *
-     */
-    var getFileEntryFailedMessage = function (error) {
-        var message = "";
+
+    var fetchFileTransferError = function (error) {
+        var message = "unknown error";
         switch (error.code) {
-            case NOT_FOUND_ERR:
-                message = 'not found';
+            case FileTransferError.FILE_NOT_FOUND_ERR:
+                message = "file not found";
                 break;
-            case SECURITY_ERR:
-                message = 'security';
+            case FileTransferError.INVALID_URL_ERR:
+                message = "invalid url";
                 break;
-            case ABORT_ERR:
-                message = 'abort';
+            case FileTransferError.CONNECTION_ERR:
+                message = "connect failed";
                 break;
-            case ENCODING_ERR:
-                message = 'bad encoding';
+            case FileTransferError.ABORT_ERR:
+                message = "abort";
                 break;
-            case NO_MODIFICATION_ALLOWED_ERR:
-                message = "no modification allowed";
+            case FileTransferError.NOT_MODIFIED_ERR:
+                message = "not modified";
                 break;
-            case INVALID_STATE_ERR:
-                message = "invalid state";
-                break;
-            case SYNTAX_ERR:
-                message = "SYNTAX error";
-                break;
-            case INVALID_MODIFICATION_ERR:
-                message = "invalid modification";
-                break;
-            case QUOTA_EXCEEDED_ERR:
-                message = "quota exceeded";
-                break;
-            case TYPE_MISMATCH_ERR:
-                message = "type mismatch";
-                break;
-            case PATH_EXISTS_ERR:
-                message = "path exists";
-                break;
-            default:
-                message = "unknown error";
         }
         return message;
     };
 
+    /**
+     * fetch 文件访问错误信息
+     */
+    var getFileEntryFailedMessage = function (error) {
+        var message = "unknown error";
+        switch (error.code) {
+            case FileError.NOT_FOUND_ERR:
+                message = 'not found';
+                break;
+            case FileError.SECURITY_ERR:
+                message = 'security';
+                break;
+            case FileError.ABORT_ERR:
+                message = 'abort';
+                break;
+            case FileError.ENCODING_ERR:
+                message = 'bad encoding';
+                break;
+            case FileError.NO_MODIFICATION_ALLOWED_ERR:
+                message = "no modification allowed";
+                break;
+            case FileError.INVALID_STATE_ERR:
+                message = "invalid state";
+                break;
+            case FileError.SYNTAX_ERR:
+                message = "SYNTAX error";
+                break;
+            case FileError.INVALID_MODIFICATION_ERR:
+                message = "invalid modification";
+                break;
+            case FileError.QUOTA_EXCEEDED_ERR:
+                message = "quota exceeded";
+                break;
+            case FileError.TYPE_MISMATCH_ERR:
+                message = "type mismatch";
+                break;
+            case FileError.PATH_EXISTS_ERR:
+                message = "path exists";
+                break;
+        }
+        return message;
+    };
+
+    var iterate = function (obj, call) {
+        var result;
+        for (var key in obj) {
+            if (!obj.hasOwnProperty(key)) continue;
+            result = call(obj[key], key, meta);
+            if (result === 'break') break;
+            if (result === 'continue') continue;
+            if (result !== undefined) return result;
+        }
+    };
+
+    /**
+     * 写文件
+     * Once you have a FileEntry object
+     * you can write to the file by calling createWriter,
+     * which returns a FileWriter object in the success callback
+     * Call the write method of FileWriter to write to the file.
+     *
+     * @param filename {string}
+     * @param content {string}|{Blob}
+     * @param callback {function} 成功时接收参数：true,fileEntry
+     *                            失败时接受参数：false,error
+     * @param type {string} 文件mime类型，默认'text/plain'
+     */
+    var writeFile = function (filename, content, callback, type) {
+        window.requestFileSystem(LocalFileSystem.PERSISTENT, 0, function (fs) {
+            //fs.root to return a DirectoryEntry object which you can use to create or get a file (by calling getFile).
+            //file will be writen in /data/data/com.seapon.cordo/files/files/
+            fs.root.getFile(filename, {create: true, exclusive: false},
+                function (fileEntry) {
+                    //The success callback for getFile receives a FileEntry object
+                    fileEntry.createWriter(function (fileWriter) {
+                        if (!(content instanceof Blob)) {
+                            content = new Blob([content], {type: type || 'text/plain'});
+                        }
+                        fileWriter.write(content);
+                        callback(true, fileEntry);
+                    }, function (error) {
+                        callback(false, {
+                            code: error.code,
+                            message: getFileEntryFailedMessage(error)
+                        });
+                    });
+                });
+        });
+    };
+    var readFileEntry = function (fileEntry, callback) {
+        fileEntry.file(function (file) {
+            var reader = new FileReader();
+            //When the read operation is complete, this.result stores the result of the read operation.
+            reader.onloadend = function () {
+                callback(true, this.result, fileEntry);
+            };
+            //You can use methods like readAsText to start the read operation.
+            reader.readAsText(file);
+        });
+    };
+    /**
+     * 读取文件
+     *
+     * You also need a FileEntry object to read an existing file.
+     *
+     * @param filename {string}
+     * @param callback {function} 文件回调，成功时接受参数：true,content,fileEntry
+     *                                     成功时接受参数：false,errorMsg
+     */
+    var readFile = function (filename, callback) {
+        window.requestFileSystem(LocalFileSystem.PERSISTENT, 0, function (fs) {
+            //fs.root to return a DirectoryEntry object which you can use to create or get a file (by calling getFile).
+            //file will be writen in /data/data/com.seapon.cordo/files/files/
+            fs.root.getFile(filename, {false: true, exclusive: false},
+                function (fileEntry) {
+                    readFileEntry(fileEntry, callback);
+                }, function (error) {
+                    callback(false, {
+                        code: error.code,
+                        message: getFileEntryFailedMessage(error)
+                    });
+                });
+        });
+    };
+
+    //联系人字段列表
+    var contact_fields = [
+        "id",//: A globally unique identifier. (DOMString)
+        "displayName",//: The name of this Contact, suitable for display to end users. (DOMString)
+        "name",//: An object containing all components of a persons name. (ContactName)
+        "nickname",//: A casual name by which to address the contact. (DOMString)
+        "phoneNumbers",//: An array of all the contact's phone numbers. (ContactField[])
+        "emails",//: An array of all the contact's email addresses. (ContactField[])
+        "addresses",//: An array of all the contact's addresses. (ContactAddress[])
+        "ims",//: An array of all the contact's IM addresses. (ContactField[])
+        "organizations",//: An array of all the contact's organizations. (ContactOrganization[])
+        "birthday",//: The birthday of the contact. (Date)
+        "note",//: A note about the contact. (DOMString)
+        "photos",//: An array of the contact's photos. (ContactField[])
+        "categories",//: An array of all the user-defined categories associated with the contact. (ContactField[])
+        "urls"//: An array of web pages associated with the contact. (ContactField[])
+    ];
     return {
+        // 文件系统
+        storage: {
+            write: writeFile,
+            read: readFile
+        },
         /**
          * 获取地理位置
          '纬度: ' + position.coords.latitude + '\n' +
@@ -81,52 +220,164 @@ var cordo = (function () {
          '精确高度: ' + position.coords.altitudeAccuracy + '\n' +
          '方向: ' + position.coords.heading + '\n' +
          '数据: ' + position.coords.speed + '\n' +
-         '时间: ' + position.timestamp + '\n';
          * @param callback {function} 成功时接受的参数是：true,{position.coords}
          *                            失败是接受的参数是：false,errorMessage
          */
         getGeolocation: function (callback) {
             navigator.geolocation.getCurrentPosition(function (position) {
                 callback(true, position.coords);
-            }, function (message) {
-                callback(false, message);
-            }, {maximumAge: 3000, timeout: 5000, enableHighAccuracy: true});
+            }, function (error) {
+                var message = "unknown error";
+                switch (error.code) {
+                    case PositionError.PERMISSION_DENIED:
+                        message = 'permission denied';
+                        break;
+                    case PositionError.POSITION_UNAVAILABLE:
+                        message = 'failed to get position(no signal)';
+                        break;
+                    case PositionError.TIMEOUT:
+                        message = 'get position timeout';
+                        break;
+                }
+                callback(false, {
+                    code: error.code,
+                    message: message
+                });
+            }, {
+                // Accept a cached position whose age is no greater than the specified time in milliseconds.
+                // 该时间内直接使用缓存而不是直接获取
+                maximumAge: 3000,
+                //The maximum length of time (milliseconds) that is allowed to pass from the call
+                // to navigator.geolocation.getCurrentPosition or geolocation.watchPosition until
+                // the corresponding geolocationSuccess callback executes
+                // If the geolocationSuccess callback is not invoked within this time,
+                // the geolocationError callback is passed a **PositionError.TIMEOUT** error code.
+                timeout: 5000,
+                // Provides a hint that the application needs the best possible results.
+                // By default of false, the device attempts to retrieve a Position using network-based methods.
+                // Setting this property to true tells the framework to use more accurate methods, such as satellite positioning. (Boolean)
+                enableHighAccuracy: true
+            });
         },
         /**
-         *
+         * 获取图片
          * @param callback {function} 成功时接受的参数是：true,imgbase64(前面不带"data:image/jpeg;base64,")
          *                            失败是接受的参数是：false,errorMessage
+         * @param opts {{}} 配置参数
+         * @param full
          */
-        takePhoto: function (callback) {
-            navigator.camera.getPicture(function (imgbase64) {
-                callback(true, imgbase64);
-            }, function (message) {
-                callback(false, message);
-            }, {
+        getPicture: function (callback, opts, full) {
+            var options = {
+                // Quality of the saved image, expressed as a range of 0-100,
+                // where 100 is typically full resolution with no loss from file compression.
+                // (Note that information about the camera's resolution is unavailable.)
                 quality: 50,
-                destinationType: Camera.DestinationType.DATA_URL
+                //  Choose the format of the return value.
+                //  Camera.DestinationType.FILE_URI
+                //  Camera.DestinationType.NATIVE_URI
+                destinationType: Camera.DestinationType.DATA_URL,
+                // Set the source of the picture.
+                // PictureSourceType.PHOTOLIBRARY
+                // PictureSourceType.SAVEDPHOTOALBUM
+                sourceType: Camera.PictureSourceType.CAMERA,
+                // Allow simple editing of image before selection.
+                allowEdit: true,
+                //Choose the returned image file's encoding.
+                // Camera.EncodingType.PNG
+                encodingType: Camera.EncodingType.JPEG,
+                //Width in pixels to scale image. Must be used with targetHeight. Aspect ratio remains constant.
+                targetWidth: 500,
+                //Height in pixels to scale image. Must be used with targetWidth. Aspect ratio remains constant.
+                targetHeight: 500,
+                //Set the type of media to select from.
+                // Only works when PictureSourceType is PHOTOLIBRARY or SAVEDPHOTOALBUM.
+                //  Camera.MediaType.VIDEO
+                //  Camera.MediaType.ALLMEDIA
+                mediaType: Camera.MediaType.PICTURE,
+                //Rotate the image to correct for the orientation of the device during capture.
+                correctOrientation: true,
+                //Save the image to the photo album on the device after capture.
+                // 如果设置为true，则保存到相册不再返回
+                saveToPhotoAlbum: false,
+                // Choose the camera to use (front- or back-facing).
+                //  Camera.Direction.FRONT
+                cameraDirection: Camera.Direction.BACK
+            };
+            opts && iterate(opts, function (val, key) {
+                options[key] = val;
             });
+            navigator.camera.getPicture(
+                /**
+                 * Callback function that provides the image data.
+                 * @param imageData {string} Base64 encoding of the image data, or the image file URI, depending on cameraOptions in effect.
+                 */
+                function (imageData) {
+                    if (full) {
+                        if (options.encodingType === Camera.EncodingType.JPEG) {
+                            imageData = "data:image/jpeg;base64," + imageData;
+                        } else if (options.encodingType === Camera.EncodingType.PNG) {
+                            imageData = "data:image/png;base64," + imageData;
+                        } else {
+                            //undefined etc.
+                        }
+                    }
+                    callback(true, imageData);
+                },
+                /**
+                 * Callback function that provides an error message.
+                 * @param message {string} The message is provided by the device's native code.
+                 */
+                function (message) {
+                    callback(false, {
+                        code: 0,
+                        message: message
+                    });
+                }, options);
         },
         /**
          *
          * @param iterator {function} 遍历器
-         * @param errorHandler {function} 错误回调，遍历结束，未发生错误时参数为undefined
+         * @param endcall {function} 结束回调，未发生错误时参数为null
+         * @param fils {[]}
          */
-        iterateContacts: function (iterator, errorHandler) {
-            navigator.contacts.find([
-                    "displayName",
-                    "phoneNumbers",
-                    "addresses",
-                    "birthday"
-                ],
+        iterateContacts: function (iterator, endcall, fils) {
+            navigator.contacts.find(fils || contact_fields,
                 function (contacts) {
                     for (var x in contacts) {
-                        var contact = contacts[x];
-                        iterator(contact);
+                        iterator(contacts[x]);
                     }
-                    errorHandler(undefined);
-                }, function (error) {
-                    errorHandler(error);
+                    endcall(null);
+                },
+                function (error) {
+                    var message = "unknown";
+                    switch (error.code) {
+                        case ContactError.INVALID_ARGUMENT_ERROR:
+                            message = "invalid argument";
+                            break;
+                        case ContactError.TIMEOUT_ERROR:
+                            message = "timeout";
+                            break;
+                        case ContactError.PENDING_OPERATION_ERROR:
+                            message = "pending operation failed";
+                            break;
+                        case ContactError.IO_ERROR:
+                            message = "IO error";
+                            break;
+                        case ContactError.NOT_SUPPORTED_ERROR:
+                            message = "not supported";
+                            break;
+                        // case ContactError.OPERATION_CANCELLED_ERROR:
+                        //     break;
+                        case ContactError.PERMISSION_DENIED_ERROR:
+                            message = "permission denied";
+                            break;
+                        case ContactError.UNKNOWN_ERROR:
+                        default:
+                    }
+                    endcall({
+                        code: error.code,
+                        message: message
+                    });
                 }
             );
         },
@@ -137,7 +388,8 @@ var cordo = (function () {
          * @param title
          */
         alert: function (message, buttonPressCallback, title) {
-            navigator.notification.alert(message, buttonPressCallback, title || "提示", "确定")
+            navigator.notification.alert(message, buttonPressCallback || function () {
+                }, title || "提示", "确定")
         },
         /**
          * 响铃
@@ -208,29 +460,57 @@ var cordo = (function () {
         getUUID: function () {
             return device.uuid;
         },
-        scan: function (callback) {
-            cordova.plugins.barcodeScanner.scan(
-                function (res) {
-                    //res.format: QR_CODE
-                    //res.cancelled:false
-                    callback(true, res.text, res.cancelled, res.format);
-                },
-                function (error) {
-                    callback(false, error);
-                },
-                {
-                    preferFrontCamera: false, // iOS and Android
-                    showFlipCameraButton: false, // iOS and Android
-                    showTorchButton: false, // iOS and Android
-                    torchOn: false, // Android, launch with the torch switched on (if available)
-                    prompt: "Place a barcode inside the scan area", // Android
-                    resultDisplayDuration: 500, // Android, display scanned text for X ms. 0 suppresses it entirely, default 1500
-                    formats: "QR_CODE,PDF_417", // default: all but PDF_417 and RSS_EXPANDED
-                    orientation: "portrait", // Android only (portrait|landscape), default unset so it rotates with the device
-                    disableAnimations: true, // iOS
-                    disableSuccessBeep: true // iOS,禁止声音，Android无法禁止
-                }
-            );
+        /**
+         * scan barcode
+         * @param callback {function}
+         * @param opts {{}} 配置项
+         */
+        scan: function (callback, opts) {
+            var options = {
+                preferFrontCamera: false, // iOS and Android
+                showFlipCameraButton: false, // iOS and Android
+                showTorchButton: false, // iOS and Android
+                torchOn: false, // Android, launch with the torch switched on (if available)
+                prompt: "Place a barcode inside the scan area", // Android
+                resultDisplayDuration: 500, // Android, display scanned text for X ms. 0 suppresses it entirely, default 1500
+                // formats: "QR_CODE,PDF_417", // default: all but PDF_417 and RSS_EXPANDED
+                orientation: "portrait", // Android only (portrait|landscape), default unset so it rotates with the device
+                disableAnimations: true, // iOS
+                disableSuccessBeep: true // iOS,禁止声音，Android无法禁止
+            };
+            opts && iterate(opts, function (val, key) {
+                options[key] = val;
+            });
+            if ("barcodeScanner" in cordova.plugins) {
+                cordova.plugins.barcodeScanner.scan(
+                    function (res) {
+                        // 取消了扫描也会进入这个回调
+                        //res.format: QR_CODE
+                        //res.cancelled:false
+                        callback(true, {
+                            "text": res.text,
+                            "cancel": res.cancelled,
+                            "format": res.format
+                        });
+                    },
+                    function (error) {
+                        callback(false, error);
+                    },
+                    options
+                );
+            }
+        },
+        /**
+         * 中断当前文件上传
+         */
+        abortUpload: function () {
+            currentUpload && currentUpload.abort();
+        },
+        /**
+         * 中断当前下载
+         */
+        abortDownload: function () {
+            currentDownload && currentDownload.abort();
         },
         /**
          * 上传一个文件
@@ -244,32 +524,40 @@ var cordo = (function () {
                 //file will be writen in /data/data/com.seapon.cordo/files/files/
                 fs.root.getFile(filename, {create: true, exclusive: false},
                     function (fileEntry) {
-
                         // !! Assumes variable fileURL contains a valid URL to a text file on the device,
-                        var fileURL = fileEntry.toURL();
-
+                        var fileURL = fileEntry.toURL();// return file:///data/data/com.seapon.cordo/files/files/[filename]
                         var options = new FileUploadOptions();
                         options.fileKey = "file";
                         options.fileName = fileURL.substr(fileURL.lastIndexOf('/') + 1);
                         options.mimeType = "text/plain";
                         options.params = params;
 
-                        var ft = new FileTransfer();
+                        currentUpload = new FileTransfer();
                         // SERVER must be a URL that can handle the request, like
                         // http://some.server.com/upload.php
-                        ft.upload(fileURL, encodeURI(uri), function (res) {
-                            callback(true, res);
-                            //res.responseCode 响应码
-                        }, function (error) {
-                            callback(true, error.code);
-                        }, options);
+                        currentUpload.upload(
+                            fileURL,
+                            encodeURI(uri),
+                            function (res) {
+                                if (typeof res.response === "string") {
+                                    res.response = JSON.parse(res.response);
+                                }
+
+                                callback(true, res.response);
+                                currentUpload = null;
+                                //res.responseCode 响应码
+                            }, function (error) {
+                                callback(true, error.code);
+                                currentUpload = null;
+                            }, options);
                     }, function (error) {
-                        var message = getFileEntryFailedMessage(error);
-                        callback(false, error.code, message);
+                        callback(false, {
+                            code: error.code,
+                            message: fetchFileTransferError(error)
+                        });
                     });
             });
         },
-        _current_download: null,
         /**
          * 下载一个文件
          * 文件保存位置：/data/data/com.seapon.cordo/files/files/[saveName]
@@ -287,8 +575,8 @@ var cordo = (function () {
                 // Make sure you add the domain name to the Content-Security-Policy <meta> element.
                 // Parameters passed to getFile create a new file or return the file if it already exists.
                 fs.root.getFile(saveName, {create: true, exclusive: false}, function (fileEntry) {
-                    var fileTransfer = new FileTransfer();
-                    cordo._current_download = fileTransfer.download(
+                    currentDownload = new FileTransfer();
+                    currentDownload.download(
                         encodeURI(sourceUri),
                         fileEntry.toURL(),
                         /**
@@ -296,22 +584,19 @@ var cordo = (function () {
                          * @param entry
                          */
                         function (entry) {
-                            callback(true, entry, "");
-                            cordo._current_download = null;
+                            callback(true, entry);
+                            currentDownload = null;
                         },
                         /**
                          * error callback
-                         * 1 = FileTransferError.FILE_NOT_FOUND_ERR
-                         2 = FileTransferError.INVALID_URL_ERR
-                         3 = FileTransferError.CONNECTION_ERR
-                         4 = FileTransferError.ABORT_ERR
-                         5 = FileTransferError.NOT_MODIFIED_ERR
                          * @param error
                          */
                         function (error) {
-                            var message = getFileEntryFailedMessage(error);
-                            callback(false, error.code, message);
-                            cordo._current_download = null;
+                            callback(false, {
+                                code: error.code,
+                                message: fetchFileTransferError(error)
+                            });
+                            currentDownload = null;
                         },
                         // trustAllHosts: Optional parameter, defaults to false. If set to true, it accepts all security certificates.
                         //  This is useful because Android rejects self-signed security certificates.
@@ -340,126 +625,25 @@ var cordo = (function () {
          */
         isVirtual: function () {
             return device.isVirtual;
-        }
-        ,
+        },
         /**
          * @param deviceready {function}
          * @returns {{initialize}}
          */
         initialize: function (deviceready) {
-            document.addEventListener('deviceready', function () {
-                // 文件系统访问
-                cordo.storage = (function () {
-                    /**
-                     * 写文件
-                     * Once you have a FileEntry object
-                     * you can write to the file by calling createWriter,
-                     * which returns a FileWriter object in the success callback
-                     * Call the write method of FileWriter to write to the file.
-                     *
-                     * @param filename {string}
-                     * @param content {string}|{Blob}
-                     * @param callback {function} 成功时接收参数：true,fileEntry
-                     *                            失败时接受参数：false,error
-                     */
-                    var write = function (filename, content, callback) {
-                        window.requestFileSystem(LocalFileSystem.PERSISTENT, 0, function (fs) {
-                            //fs.root to return a DirectoryEntry object which you can use to create or get a file (by calling getFile).
-                            //file will be writen in /data/data/com.seapon.cordo/files/files/
-                            fs.root.getFile(filename, {create: true, exclusive: false},
-                                function (fileEntry) {
-                                    //The success callback for getFile receives a FileEntry object
-                                    fileEntry.createWriter(function (fileWriter) {
-                                        if (!(content instanceof Blob)) {
-                                            content = new Blob([content], {type: 'text/plain'});
-                                        }
-                                        fileWriter.write(content);
-                                        callback(true, fileEntry);
-                                    }, function (error) {
-                                        callback(false, error);
-                                    })
-                                });
-                        });
-                    };
-                    var readFileEntry = function (fileEntry, callback) {
-                        fileEntry.file(function (file) {
-                            var reader = new FileReader();
-                            //When the read operation is complete, this.result stores the result of the read operation.
-                            reader.onloadend = function () {
-                                callback(true, this.result, fileEntry);
-                            };
-                            //You can use methods like readAsText to start the read operation.
-                            reader.readAsText(file);
-                        });
-                    };
-                    /**
-                     * 读取文件
-                     *
-                     * You also need a FileEntry object to read an existing file.
-                     *
-                     * @param filename {string}
-                     * @param callback {function} 文件回调，成功时接受参数：true,content,fileEntry
-                     *                                     成功时接受参数：false,errorMsg
-                     */
-                    var read = function (filename, callback) {
-                        window.requestFileSystem(LocalFileSystem.PERSISTENT, 0, function (fs) {
-                            //fs.root to return a DirectoryEntry object which you can use to create or get a file (by calling getFile).
-                            //file will be writen in /data/data/com.seapon.cordo/files/files/
-                            fs.root.getFile(filename, {create: true, exclusive: false},
-                                function (fileEntry) {
-                                    readFileEntry(fileEntry, callback);
-                                }, function (error) {
-                                    var message = "";
-                                    switch (error.code) {
-                                        case NOT_FOUND_ERR:
-                                            message = 'not found';
-                                            break;
-                                        case SECURITY_ERR:
-                                            message = 'security';
-                                            break;
-                                        case ABORT_ERR:
-                                            message = 'abort';
-                                            break;
-                                        case ENCODING_ERR:
-                                            message = 'bad encoding';
-                                            break;
-                                        case NO_MODIFICATION_ALLOWED_ERR:
-                                            message = "no modification allowed";
-                                            break;
-                                        case INVALID_STATE_ERR:
-                                            message = "invalid state";
-                                            break;
-                                        case SYNTAX_ERR:
-                                            message = "SYNTAX error";
-                                            break;
-                                        case INVALID_MODIFICATION_ERR:
-                                            message = "invalid modification";
-                                            break;
-                                        case QUOTA_EXCEEDED_ERR:
-                                            message = "quota exceeded";
-                                            break;
-                                        case TYPE_MISMATCH_ERR:
-                                            message = "type mismatch";
-                                            break;
-                                        case PATH_EXISTS_ERR:
-                                            message = "path exists";
-                                            break;
-                                        default:
-                                            message = "unknown error";
-                                    }
-                                    callback(false, error.code);
-                                });
-                        });
-                    };
-
-                    return {
-                        write: write,
-                        read: read
-                    };
-                })();
-                deviceready();
-            }, false);
+            document.addEventListener('deviceready', deviceready, false);
             return cordo;
+        },
+        log: function (message) {
+            readFile("log.txt", function (res, content) {
+                if (res) {
+                    writeFile("log.txt", content + "\n" + message, function (res) {
+                        if (!res) cordo.alert("log failed")
+                    }, "")
+                } else {
+                    cordo.alert("log failed");
+                }
+            });
         }
     };
 })();

@@ -2,6 +2,7 @@
  * Created by lin on 6/20/17.
  */
 cordo.initialize(function () {
+    var domcontent = document.getElementById("content");
     // document.getElementById("gootherpage").onclick = function () {
     //     location.href = "login.html";
     // };
@@ -11,18 +12,18 @@ cordo.initialize(function () {
         // Although the object is in the global scope, it is not available until after the deviceready event.
         var html = "";
         // Get the version of Cordova running on the device.
-        html += "cordova版本：" + device.cordova + "<br/>";
         html += "型号：" + cordo.getDeviceModel() + "<br/>";
         html += "系统：" + cordo.getDevicePlatform() + "<br/>";
         html += "系统版本：" + cordo.getDevicePlatformVersion() + "<br/>";
         html += "UUID：" + cordo.getUUID() + "<br/>";
         html += "制造商：" + cordo.getManufacturer() + "<br/>";
         html += "模拟器：" + (cordo.isVirtual() ? "是" : "否") + "<br/>";
-        document.getElementById("content").innerHTML = html;
+        html += "序列号：" + (device.serial ? device.serial : "no serial") + "<br/>";
+        domcontent.innerHTML = html;
     };
     //联系人信息
-    var contacts_content = "";
     document.getElementById("showcontacts").onclick = function () {
+        var contacts_content = "";
         layer.open({type: 2});
         // print all contacts
         cordo.iterateContacts(function (contact) {
@@ -36,32 +37,34 @@ cordo.initialize(function () {
             contacts_content += "<hr>";
         }, function (error) {
             if (error) {
-                cordo.alert(error);
+                cordo.alert("error code:" + error.code + " message:" + error.message);
             } else {
-                document.getElementById("content").innerHTML = contacts_content;
+                domcontent.innerHTML = contacts_content;
             }
             layer.closeAll();
-        });
+        }, [
+            "displayName",
+            "phoneNumbers",
+            "birthday"
+        ]);
     };
     //拍照获取base64码
     document.getElementById("gocamera").onclick = function () {
         // take photos
-        cordo.takePhoto(function (isSuccess, data) {
+        cordo.getPicture(function (isSuccess, data) {
             if (isSuccess) {
-                cordo.alert("success");
-                document.getElementById("content").innerHTML = '<img src="data:image/jpeg;base64,' +
-                    data + '" style="width: 600px;height: 800px">';
+                domcontent.innerHTML = '<img src="' + data + '" style="width: 600px;height: 800px">';
             } else {
-                cordo.alert("failure:" + data);
+                cordo.alert("Error code:" + data.code + " message:" + data.message);
             }
-        });
+        }, {}, true);
     };
     //地理位置
     document.getElementById("getgeolocation").onclick = function () {
         layer.open({type: 2});
         cordo.getGeolocation(function (isSuccess, data) {
             if (isSuccess) {
-                document.getElementById("content").innerHTML =
+                domcontent.innerHTML =
                     '纬度: ' + data.latitude + '\n' +
                     '经度: ' + data.longitude + '\n' +
                     '海拔: ' + data.altitude + '\n' +
@@ -70,7 +73,7 @@ cordo.initialize(function () {
                     '方向: ' + data.heading + '\n' +
                     '数据: ' + data.speed + '\n';
             } else {
-                cordo.alert("获取超时，请打开GPS和网络位置权限：" + data);
+                cordo.alert("Error code：" + data.code + " message:" + data.message);
             }
             layer.closeAll();
         });
@@ -95,9 +98,23 @@ cordo.initialize(function () {
         //The OS may delete these files when the device runs low on storage, nevertheless, apps should not rely on the OS to delete files in here
         html += "缓存目录（可清理）:" + cordova.file.cacheDirectory + "<br/>";
 
-        document.getElementById("content").innerHTML = html;
+        domcontent.innerHTML = html;
     };
 
+    document.getElementById("testwritenotexistfile").onclick = function () {
+        displayStorageInfo();
+        cordo.storage.read("testwritenotexistfile.txt", function (success, content) {
+            if (success) {
+                cordo.alert("content ：" + content);
+            } else {
+                if (content.code === 1) {
+                    cordo.alert("文件不存在");
+                } else {
+                    cordo.alert('错误 code:' + content.code + " message:" + content.message);
+                }
+            }
+        });
+    };
     document.getElementById("testwrite").onclick = function () {
         displayStorageInfo();
         navigator.notification.prompt("请输入一段文本", function (txt) {
@@ -115,17 +132,25 @@ cordo.initialize(function () {
         cordo.download(
             "http://feat.pgyxwd.com/upload/res.txt",
             "download.txt",
-            function (res, entry, message) {
+            function (res, data) {
                 if (!res) {
-                    cordo.alert("error code:" + entry + " message:" + message);
+                    cordo.alert("error code:" + data.code +
+                        " message:" + data.message);
                 } else {
+                    cordo.alert("file saved in " + data.fullPath + " url:" + data.toURL());
                     cordo.beep();
                 }
             });
     };
     document.getElementById("scan").onclick = function () {
-        cordo.scan(function (res, txt, cancel, format) {
-            cordo.alert(txt);
+        cordo.scan(function (res, data) {
+            if (res) {
+                cordo.alert("content:" + data.text +
+                    " canceled:" + data.cancel.toString() +
+                    " format:" + data.format);
+            } else {
+                cordo.alert(data);
+            }
         });
     };
 
@@ -138,8 +163,16 @@ cordo.initialize(function () {
     };
 
     document.getElementById("goupload").onclick = function () {
-        cordo.upload("download.txt", "http://feat.pgyxwd.com/index/testupload", function (res, data) {
-            cordo.alert(res.toString())
+        cordo.storage.write("download.txt", (new Date()).toLocaleString(), function (res, error) {
+            if (res) {
+                cordo.upload("download.txt",
+                    "http://feat.pgyxwd.com/index/testupload",
+                    function (res, data) {
+                        domcontent.innerHTML = '<a href="' + data.message + '">浏览器中查看上传文件</a>';
+                    });
+            } else {
+                cordo.alert(error.message);
+            }
         });
     };
 
